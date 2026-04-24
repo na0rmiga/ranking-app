@@ -1,8 +1,28 @@
+/* Fix para touch devices */
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+  touch-action: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
 }
+
+html, body {
+  overflow-x: hidden;
+  position: fixed;
+  width: 100%;
+  height: 100%;
+}
+
+.App {
+  overflow-y: auto;
+  height: 100vh;
+  -webkit-overflow-scrolling: touch;
+}
+
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
@@ -116,6 +136,7 @@ body {
   box-shadow: 0 4px 12px rgba(0,0,0,0.08);
   position: relative;
   overflow: hidden;
+  touch-action: none;
 }
 
 .ranked-item::before {
@@ -286,6 +307,7 @@ body {
   transition: all 0.3s ease;
   box-shadow: 0 2px 8px rgba(0,0,0,0.06);
   backdrop-filter: blur(10px);
+  touch-action: none;
 }
 
 .unranked-item:active {
