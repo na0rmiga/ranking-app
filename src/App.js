@@ -34,7 +34,7 @@ function SortableItem({ item }) {
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1,
+    opacity: isDragging ? 0.3 : 1,
   };
 
   return (
@@ -94,7 +94,7 @@ function DraggableUnrankedItem({ item }) {
 
   const style = {
     transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
-    opacity: isDragging ? 0 : 1,  // Invisible mientras se arrastra
+    opacity: isDragging ? 0.3 : 1,
   };
 
   return (
@@ -213,69 +213,18 @@ function App() {
         const rankedItem = {
           ...activeItem,
           posicion_ranking: rankeados.length + 1,
-          cambio_posicion: 'up',
+          cambio_posicion: null,  // SIN flecha cuando viene de unranked
         };
 
         setItems([...rankeados, rankedItem, ...noRankeados]);
 
         await supabase
           .from('items_ranking')
-          .update({ posicion_ranking: rankeados.length + 1, cambio_posicion: 'up' })
+          .update({ posicion_ranking: rankeados.length + 1, cambio_posicion: null })
           .eq('id', activeItem.id);
       }
       return;
     }
-
-    // Si lo sueltan en la zona de unranked
-    if (over.id === 'unranked-drop-zone') {
-      if (activeItem.posicion_ranking !== null) {
-        const rankeados = items.filter(item => item.posicion_ranking !== null && item.id !== activeItem.id);
-        const noRankeados = items.filter(item => item.posicion_ranking === null);
-
-        const updatedRankeados = rankeados.map((item, index) => {
-          const newPosition = index + 1;
-          const oldPosition = item.posicion_ranking;
-          
-          let cambioPos = item.cambio_posicion;
-          if (newPosition < oldPosition) {
-            cambioPos = 'up';
-          }
-
-          return {
-            ...item,
-            posicion_ranking: newPosition,
-            cambio_posicion: cambioPos,
-          };
-        });
-
-        const unrankedItem = {
-          ...activeItem,
-          posicion_ranking: null,
-          cambio_posicion: null,
-        };
-
-        setItems([...updatedRankeados, ...noRankeados, unrankedItem]);
-
-        await supabase
-          .from('items_ranking')
-          .update({ posicion_ranking: null, cambio_posicion: null })
-          .eq('id', activeItem.id);
-
-        for (const item of updatedRankeados) {
-          await supabase
-            .from('items_ranking')
-            .update({ 
-              posicion_ranking: item.posicion_ranking,
-              cambio_posicion: item.cambio_posicion 
-            })
-            .eq('id', item.id);
-        }
-      }
-      return;
-    }
-
-    const overItem = items.find(item => item.id === over.id);
-    if (!overItem) return;
 
     // Si es un item unranked arrastrándose sobre un ranked
     if (activeItem.posicion_ranking === null && overItem.posicion_ranking !== null) {
@@ -287,24 +236,11 @@ function App() {
 
       const updatedRankeados = rankeados.map((item, index) => {
         const newPos = index + 1;
-        const oldPos = item.posicion_ranking;
         
-        let cambioPos = null;
-        
-        if (item.id === activeItem.id) {
-          cambioPos = 'up';
-        } else if (oldPos !== null && newPos > oldPos) {
-          cambioPos = 'down';
-        } else if (oldPos !== null && newPos < oldPos) {
-          cambioPos = 'up';
-        } else {
-          cambioPos = item.cambio_posicion;
-        }
-
         return {
           ...item,
           posicion_ranking: newPos,
-          cambio_posicion: cambioPos,
+          cambio_posicion: item.id === activeItem.id ? null : null, // SIN flechas cuando viene de unranked
         };
       });
 
@@ -315,7 +251,7 @@ function App() {
           .from('items_ranking')
           .update({ 
             posicion_ranking: item.posicion_ranking,
-            cambio_posicion: item.cambio_posicion 
+            cambio_posicion: null // SIN flechas
           })
           .eq('id', item.id);
       }
@@ -334,22 +270,18 @@ function App() {
         const newPosition = index + 1;
         const oldPosition = item.posicion_ranking;
         
-        let cambioPos = item.cambio_posicion;
+        let cambioPos = null;
         
+        // SOLO el item que se movió tiene flecha
         if (item.id === active.id) {
           if (newPosition < oldPosition) {
             cambioPos = 'up';
           } else if (newPosition > oldPosition) {
             cambioPos = 'down';
           }
-        } else {
-          if (newPosition > oldPosition) {
-            cambioPos = 'down';
-          } else if (newPosition < oldPosition) {
-            cambioPos = 'up';
-          }
         }
-
+        // El resto NO tiene flechas (se borran)
+        
         return {
           ...item,
           posicion_ranking: newPosition,
