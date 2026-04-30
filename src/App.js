@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from './supabaseClient';
 import {
   DndContext,
@@ -21,7 +21,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import './App.css';
 
-function SortableItem({ item }) {
+function SortableItem({ item, justMovedId }) {
   const {
     attributes,
     listeners,
@@ -34,79 +34,52 @@ function SortableItem({ item }) {
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.3 : 1,
+    opacity: isDragging ? 0 : 1,
   };
 
+  const className = `ranked-item${item.id === justMovedId ? ' just-moved' : ''}`;
+
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      {...attributes}
-      {...listeners}
-      className="ranked-item"
-    >
-      <img src={item.foto_url} alt={item.nombre} className="ranked-photo" />
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners} className={className}>
+      <div className="photo-wrapper">
+        <img src={item.foto_url} alt={item.nombre} className="ranked-photo" />
+      </div>
       <div className="ranked-info">
         <h3>{item.nombre}</h3>
         {item.subtitulo && <p className="subtitulo">{item.subtitulo}</p>}
       </div>
       <div className="ranked-position">
-        <span className="number">{item.posicion_ranking}</span>
-        {item.posicion_ranking === 1 && <span className="star-icon">⭐</span>}
+        {item.posicion_ranking === 1 && <span className="position-emoji">❤️</span>}
         {item.posicion_ranking > 1 && item.cambio_posicion === 'up' && <span className="arrow-up">⬆️</span>}
         {item.posicion_ranking > 1 && item.cambio_posicion === 'down' && <span className="arrow-down">⬇️</span>}
+        <span className="number">{item.posicion_ranking}</span>
       </div>
     </div>
   );
 }
 
 function PlaceholderItem() {
-  const {
-    setNodeRef,
-    transform,
-    transition,
-  } = useSortable({ id: 'placeholder-space' });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    height: '89px', // Altura de un ranked-item
-    margin: '0',
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className="placeholder-space"
-    />
-  );
+  return <div className="placeholder-space" style={{ height: '83px' }} />;
 }
 
-function DraggableUnrankedItem({ item }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    isDragging,
-  } = useDraggable({ id: item.id });
+function DraggableUnrankedItem({ item, justMovedId }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: item.id });
 
   const style = {
     transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
-    opacity: isDragging ? 0.3 : 1,
+    opacity: isDragging ? 0 : 1,
   };
 
+  const className = `unranked-item${item.id === justMovedId ? ' just-moved' : ''}`;
+
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      {...attributes}
-      {...listeners}
-      className="unranked-item"
-    >
-      <div className="unranked-circle">
-        {item.nombre.charAt(0).toUpperCase()}
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners} className={className}>
+      <div className="photo-wrapper">
+        {item.foto_url ? (
+          <img src={item.foto_url} alt={item.nombre} className="ranked-photo" />
+        ) : (
+          <div className="unranked-circle">{item.nombre.charAt(0).toUpperCase()}</div>
+        )}
       </div>
       <div className="unranked-info">
         <h4>{item.nombre}</h4>
@@ -118,26 +91,27 @@ function DraggableUnrankedItem({ item }) {
 
 function RankedDropZone({ isActive }) {
   const { setNodeRef } = useDroppable({ id: 'ranked-drop-zone' });
-
   return (
-    <div 
-      ref={setNodeRef} 
-      className={`ranked-drop-zone ${isActive ? 'active' : ''}`}
-    >
+    <div ref={setNodeRef} className={`ranked-drop-zone ${isActive ? 'active' : ''}`}>
       {isActive && 'Suelta aquí para agregar al ranking'}
     </div>
   );
 }
 
-function UnrankedDropZone({ isActive }) {
-  const { setNodeRef } = useDroppable({ id: 'unranked-drop-zone' });
+function RankedDropEndZone({ show }) {
+  const { setNodeRef } = useDroppable({ id: 'ranked-drop-end-zone' });
+  return <div ref={setNodeRef} className="ranked-drop-end-zone" style={{ height: show ? '48px' : '0', overflow: 'hidden' }} />;
+}
 
+function UnrankedDropZone({ show }) {
+  const { setNodeRef } = useDroppable({ id: 'unranked-drop-zone' });
   return (
-    <div 
-      ref={setNodeRef} 
-      className={`unranked-drop-zone ${isActive ? 'active' : ''}`}
+    <div
+      ref={setNodeRef}
+      className={`unranked-drop-zone ${show ? 'active' : ''}`}
+      style={show ? {} : { height: 0, minHeight: 0, border: 'none', padding: 0, overflow: 'hidden' }}
     >
-      {isActive && 'Suelta aquí para quitar del ranking'}
+      {show && 'Suelta aquí para quitar del ranking'}
     </div>
   );
 }
@@ -148,17 +122,15 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [activeId, setActiveId] = useState(null);
   const [overId, setOverId] = useState(null);
+  const [justMovedId, setJustMovedId] = useState(null);
+  const originalPositionsRef = useRef({});
 
   const sensors = useSensors(
     useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  useEffect(() => { fetchData(); }, []);
 
   async function fetchData() {
     try {
@@ -166,7 +138,6 @@ function App() {
         .from('items_ranking')
         .select('*')
         .order('posicion_ranking', { ascending: true, nullsFirst: false });
-      
       if (itemsError) throw itemsError;
 
       const { data: configData, error: configError } = await supabase
@@ -174,7 +145,6 @@ function App() {
         .select('*')
         .limit(1)
         .single();
-      
       if (configError) throw configError;
 
       setItems(itemsData);
@@ -188,10 +158,33 @@ function App() {
 
   function handleDragStart(event) {
     setActiveId(event.active.id);
+    const positions = {};
+    items.forEach(item => {
+      if (item.posicion_ranking !== null) positions[item.id] = item.posicion_ranking;
+    });
+    originalPositionsRef.current = positions;
   }
 
   function handleDragOver(event) {
-    setOverId(event.over?.id || null);
+    const { active, over } = event;
+    setOverId(over?.id || null);
+
+    if (!over || active.id === over.id) return;
+
+    const activeItem = items.find(item => item.id === active.id);
+    const overItem = items.find(item => item.id === over.id);
+
+    // Live-reorder ranked items as you drag — only update array order, not posicion_ranking yet
+    if (activeItem?.posicion_ranking !== null && overItem?.posicion_ranking !== null) {
+      setItems(current => {
+        const ranked = current.filter(item => item.posicion_ranking !== null);
+        const oldIndex = ranked.findIndex(item => item.id === active.id);
+        const newIndex = ranked.findIndex(item => item.id === over.id);
+        if (oldIndex === newIndex) return current;
+        const unranked = current.filter(item => item.posicion_ranking === null);
+        return [...arrayMove(ranked, oldIndex, newIndex), ...unranked];
+      });
+    }
   }
 
   async function handleDragEnd(event) {
@@ -201,132 +194,114 @@ function App() {
 
     if (!over) return;
 
-    const activeItem = items.find(item => item.id === active.id);
-    if (!activeItem) return;
+    const activeSnapshot = items.find(item => item.id === active.id);
+    const overSnapshot = items.find(item => item.id === over.id);
+    const wasRanked = activeSnapshot?.posicion_ranking !== null;
+    const isCrossSection =
+      (wasRanked && over.id === 'unranked-drop-zone') ||
+      (!wasRanked && (over.id === 'ranked-drop-zone' || over.id === 'ranked-drop-end-zone')) ||
+      (!wasRanked && overSnapshot?.posicion_ranking !== null);
 
-    // Si lo sueltan en la zona de ranked (cuando ranked está vacío)
-    if (over.id === 'ranked-drop-zone') {
-      if (activeItem.posicion_ranking === null) {
-        const rankeados = items.filter(item => item.posicion_ranking !== null);
-        const noRankeados = items.filter(item => item.posicion_ranking === null && item.id !== activeItem.id);
-        
-        const rankedItem = {
-          ...activeItem,
-          posicion_ranking: rankeados.length + 1,
-          cambio_posicion: null,  // SIN flecha cuando viene de unranked
-        };
+    let dbUpdates = null;
 
-        setItems([...rankeados, rankedItem, ...noRankeados]);
+    setItems(current => {
+      const activeItem = current.find(item => item.id === active.id);
+      if (!activeItem) return current;
 
-        await supabase
-          .from('items_ranking')
-          .update({ posicion_ranking: rankeados.length + 1, cambio_posicion: null })
-          .eq('id', activeItem.id);
+      // ── Add to end of ranked ──────────────────────────────────────────
+      if (over.id === 'ranked-drop-zone' || over.id === 'ranked-drop-end-zone') {
+        if (activeItem.posicion_ranking !== null) return current;
+        const ranked = current.filter(item => item.posicion_ranking !== null);
+        const unranked = current.filter(item => item.posicion_ranking === null && item.id !== active.id);
+        const newPos = ranked.length + 1;
+        const rankedItem = { ...activeItem, posicion_ranking: newPos, cambio_posicion: null };
+        dbUpdates = [{ id: active.id, posicion_ranking: newPos, cambio_posicion: null }];
+        return [...ranked, rankedItem, ...unranked];
       }
-      return;
+
+      // ── Move to unranked ──────────────────────────────────────────────
+      if (over.id === 'unranked-drop-zone') {
+        if (activeItem.posicion_ranking === null) return current;
+        const ranked = current.filter(item => item.posicion_ranking !== null && item.id !== active.id)
+          .map((item, i) => ({ ...item, posicion_ranking: i + 1, cambio_posicion: null }));
+        const unranked = current.filter(item => item.posicion_ranking === null);
+        const unrankedItem = { ...activeItem, posicion_ranking: null, cambio_posicion: null };
+        dbUpdates = [
+          { id: active.id, posicion_ranking: null, cambio_posicion: null },
+          ...ranked.map(item => ({ id: item.id, posicion_ranking: item.posicion_ranking, cambio_posicion: null })),
+        ];
+        return [...ranked, ...unranked, unrankedItem];
+      }
+
+      const overItem = current.find(item => item.id === over.id);
+      if (!overItem) return current;
+
+      // ── Unranked → insert into ranked ────────────────────────────────
+      if (activeItem.posicion_ranking === null && overItem.posicion_ranking !== null) {
+        const ranked = current.filter(item => item.posicion_ranking !== null);
+        const unranked = current.filter(item => item.posicion_ranking === null && item.id !== active.id);
+        const idx = ranked.findIndex(item => item.id === over.id);
+        const newRanked = [
+          ...ranked.slice(0, idx),
+          { ...activeItem, cambio_posicion: null },
+          ...ranked.slice(idx),
+        ].map((item, i) => ({ ...item, posicion_ranking: i + 1 }));
+        dbUpdates = newRanked.map(item => ({ id: item.id, posicion_ranking: item.posicion_ranking, cambio_posicion: null }));
+        return [...newRanked, ...unranked];
+      }
+
+      // ── Ranked reorder (live-sorted by handleDragOver) ───────────────
+      if (activeItem.posicion_ranking !== null && overItem.posicion_ranking !== null) {
+        const ranked = current.filter(item => item.posicion_ranking !== null);
+        const unranked = current.filter(item => item.posicion_ranking === null);
+        const updated = ranked.map((item, i) => {
+          const newPos = i + 1;
+          const origPos = originalPositionsRef.current[item.id] ?? item.posicion_ranking;
+          let cambioPos = null;
+          if (newPos < origPos) cambioPos = 'up';
+          else if (newPos > origPos) cambioPos = 'down';
+          return { ...item, posicion_ranking: newPos, cambio_posicion: cambioPos };
+        });
+        dbUpdates = updated.map(item => ({ id: item.id, posicion_ranking: item.posicion_ranking, cambio_posicion: item.cambio_posicion }));
+        return [...updated, ...unranked];
+      }
+
+      return current;
+    });
+
+    if (isCrossSection) {
+      setJustMovedId(active.id);
+      setTimeout(() => setJustMovedId(null), 350);
     }
 
-    // Si es un item unranked arrastrándose sobre un ranked
-    if (activeItem.posicion_ranking === null && overItem.posicion_ranking !== null) {
-      const rankeados = items.filter(item => item.posicion_ranking !== null);
-      const noRankeados = items.filter(item => item.posicion_ranking === null && item.id !== activeItem.id);
-      
-      const newPosition = overItem.posicion_ranking;
-      rankeados.splice(newPosition - 1, 0, activeItem);
-
-      const updatedRankeados = rankeados.map((item, index) => {
-        const newPos = index + 1;
-        
-        return {
-          ...item,
-          posicion_ranking: newPos,
-          cambio_posicion: item.id === activeItem.id ? null : null, // SIN flechas cuando viene de unranked
-        };
-      });
-
-      setItems([...updatedRankeados, ...noRankeados]);
-
-      for (const item of updatedRankeados) {
-        await supabase
-          .from('items_ranking')
-          .update({ 
-            posicion_ranking: item.posicion_ranking,
-            cambio_posicion: null // SIN flechas
-          })
-          .eq('id', item.id);
-      }
-      return;
-    }
-
-    // Si ambos son ranked (reordenar)
-    if (active.id !== over.id && activeItem.posicion_ranking !== null && overItem.posicion_ranking !== null) {
-      const rankeados = items.filter(item => item.posicion_ranking !== null);
-      const oldIndex = rankeados.findIndex(item => item.id === active.id);
-      const newIndex = rankeados.findIndex(item => item.id === over.id);
-
-      const newRankeados = arrayMove(rankeados, oldIndex, newIndex);
-
-      const updatedRankeados = newRankeados.map((item, index) => {
-        const newPosition = index + 1;
-        const oldPosition = item.posicion_ranking;
-        
-        let cambioPos = null;
-        
-        // SOLO el item que se movió tiene flecha
-        if (item.id === active.id) {
-          if (newPosition < oldPosition) {
-            cambioPos = 'up';
-          } else if (newPosition > oldPosition) {
-            cambioPos = 'down';
-          }
-        }
-        // El resto NO tiene flechas (se borran)
-        
-        return {
-          ...item,
-          posicion_ranking: newPosition,
-          cambio_posicion: cambioPos,
-        };
-      });
-
-      const noRankeados = items.filter(item => item.posicion_ranking === null);
-      setItems([...updatedRankeados, ...noRankeados]);
-
-      for (const item of updatedRankeados) {
-        await supabase
-          .from('items_ranking')
-          .update({ 
-            posicion_ranking: item.posicion_ranking,
-            cambio_posicion: item.cambio_posicion 
-          })
-          .eq('id', item.id);
+    // DB sync after state is settled
+    if (dbUpdates) {
+      for (const row of dbUpdates) {
+        await supabase.from('items_ranking')
+          .update({ posicion_ranking: row.posicion_ranking, cambio_posicion: row.cambio_posicion })
+          .eq('id', row.id);
       }
     }
   }
 
   const rankeados = items.filter(item => item.posicion_ranking !== null);
   const noRankeados = items.filter(item => item.posicion_ranking === null);
-  
   const activeItem = activeId ? items.find(item => item.id === activeId) : null;
   const isDraggingRanked = activeItem && activeItem.posicion_ranking !== null;
   const isDraggingUnranked = activeItem && activeItem.posicion_ranking === null;
-  
-  // Crear lista con placeholder si estamos arrastrando unranked sobre ranked
+
   const overItem = overId ? items.find(item => item.id === overId) : null;
   const showPlaceholder = isDraggingUnranked && overItem && overItem.posicion_ranking !== null;
-  
+
   let displayRanked = [...rankeados];
   if (showPlaceholder && activeItem) {
     const insertIndex = displayRanked.findIndex(item => item.id === overId);
-    const placeholder = { id: 'placeholder-space', isPlaceholder: true };
-    displayRanked.splice(insertIndex, 0, placeholder);
+    displayRanked.splice(insertIndex, 0, { id: 'placeholder-space', isPlaceholder: true });
   }
-  
-  const rankedIds = displayRanked.map(i => i.isPlaceholder ? i.id : i.id);
 
-  if (loading) {
-    return <div className="loading">Cargando...</div>;
-  }
+  const rankedIds = displayRanked.filter(i => !i.isPlaceholder).map(i => i.id);
+
+  if (loading) return <div className="loading">Cargando...</div>;
 
   return (
     <div className="App">
@@ -334,119 +309,87 @@ function App() {
         <div className="header">
           <span className="trophy-icon">🏆</span>
           <div className="header-text">
+            {config?.subtitulo_principal && (
+              <p className="header-top-label">{config.subtitulo_principal}</p>
+            )}
             <h1>{config?.titulo_principal || 'RANKING'}</h1>
-            <p className="subtitle-header">{config?.subtitulo_principal || ''}</p>
           </div>
           <span className="trophy-icon">🏆</span>
         </div>
 
-        <h2 className="section-title">{config?.texto_ranked || 'Ranked'}</h2>
-        
+        <h2 className="section-title">{config?.texto_ranked || 'Posiciones'}</h2>
+
         <DndContext
           sensors={sensors}
           collisionDetection={(args) => {
             const activeItem = items.find(item => item.id === args.active.id);
-            
-            if (activeItem && activeItem.posicion_ranking === null) {
-              const rankedIds = rankeados.map(i => i.id);
-              const validIds = new Set([...rankedIds, 'ranked-drop-zone']);
-              
+            if (activeItem?.posicion_ranking === null) {
+              const validIds = new Set([...rankeados.map(i => i.id), 'ranked-drop-zone', 'ranked-drop-end-zone']);
               const filteredRects = new Map();
-              args.droppableRects.forEach((rect, id) => {
-                if (validIds.has(id)) {
-                  filteredRects.set(id, rect);
-                }
-              });
-              
-              return closestCenter({
-                ...args,
-                droppableRects: filteredRects
-              });
+              args.droppableRects.forEach((rect, id) => { if (validIds.has(id)) filteredRects.set(id, rect); });
+              return closestCenter({ ...args, droppableRects: filteredRects });
             }
-            
-            if (activeItem && activeItem.posicion_ranking !== null) {
-              const rankedIds = rankeados.map(i => i.id);
-              const validIds = new Set([...rankedIds, 'unranked-drop-zone']);
-              
+            if (activeItem?.posicion_ranking !== null) {
+              const validIds = new Set([...rankeados.map(i => i.id), 'unranked-drop-zone']);
               const filteredRects = new Map();
-              args.droppableRects.forEach((rect, id) => {
-                if (validIds.has(id)) {
-                  filteredRects.set(id, rect);
-                }
-              });
-              
-              return closestCenter({
-                ...args,
-                droppableRects: filteredRects
-              });
+              args.droppableRects.forEach((rect, id) => { if (validIds.has(id)) filteredRects.set(id, rect); });
+              return closestCenter({ ...args, droppableRects: filteredRects });
             }
-            
             return closestCenter(args);
           }}
           onDragStart={handleDragStart}
           onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
         >
-          <SortableContext
-            items={rankedIds}
-            strategy={verticalListSortingStrategy}
-          >
+          <SortableContext items={rankedIds} strategy={verticalListSortingStrategy}>
             <div className="ranked-section">
               {displayRanked.length > 0 ? (
-                displayRanked.map((item) => (
-                  item.isPlaceholder ? (
-                    <PlaceholderItem key={item.id} item={item} />
-                  ) : (
-                    <SortableItem key={item.id} item={item} />
-                  )
-                ))
+                <>
+                  {displayRanked.map((item) =>
+                    item.isPlaceholder ? (
+                      <PlaceholderItem key={item.id} />
+                    ) : (
+                      <SortableItem key={item.id} item={item} justMovedId={justMovedId} />
+                    )
+                  )}
+                  <RankedDropEndZone show={isDraggingUnranked} />
+                </>
               ) : (
                 <RankedDropZone isActive={isDraggingUnranked} />
               )}
             </div>
           </SortableContext>
 
-          <h2 className="section-title unranked-title">{config?.texto_unranked || 'Unranked'}</h2>
-          
+          <h2 className="section-title unranked-title">{config?.texto_unranked || 'Sin rankear'}</h2>
+
           <div className="unranked-section">
-            {noRankeados.length > 0 ? (
-              <>
-                {isDraggingRanked && <UnrankedDropZone isActive={true} />}
-                {noRankeados.map((item) => (
-                  <DraggableUnrankedItem key={item.id} item={item} />
-                ))}
-              </>
-            ) : (
-              <UnrankedDropZone isActive={isDraggingRanked} />
-            )}
+            <UnrankedDropZone show={isDraggingRanked} />
+            {noRankeados.map((item) => (
+              <DraggableUnrankedItem key={item.id} item={item} justMovedId={justMovedId} />
+            ))}
           </div>
-          <DragOverlay>
+
+          <DragOverlay dropAnimation={null}>
             {activeItem ? (
-              <div className={activeItem.posicion_ranking ? "ranked-item dragging" : "unranked-item dragging"}>
-                {activeItem.posicion_ranking ? (
-                  <>
+              <div className="ranked-item dragging">
+                <div className="photo-wrapper">
+                  {activeItem.foto_url ? (
                     <img src={activeItem.foto_url} alt={activeItem.nombre} className="ranked-photo" />
-                    <div className="ranked-info">
-                      <h3>{activeItem.nombre}</h3>
-                      {activeItem.subtitulo && <p className="subtitulo">{activeItem.subtitulo}</p>}
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="unranked-circle">
-                      {activeItem.nombre.charAt(0).toUpperCase()}
-                    </div>
-                    <div className="unranked-info">
-                      <h4>{activeItem.nombre}</h4>
-                      {activeItem.subtitulo && <p className="subtitulo-small">{activeItem.subtitulo}</p>}
-                    </div>
-                  </>
-                )}
+                  ) : (
+                    <div className="unranked-circle">{activeItem.nombre.charAt(0).toUpperCase()}</div>
+                  )}
+                </div>
+                <div className="ranked-info">
+                  <h3>{activeItem.nombre}</h3>
+                  {activeItem.subtitulo && <p className="subtitulo">{activeItem.subtitulo}</p>}
+                </div>
+                <div className="ranked-position">
+                  <span className="number">?</span>
+                </div>
               </div>
             ) : null}
           </DragOverlay>
         </DndContext>
-        
       </div>
     </div>
   );
